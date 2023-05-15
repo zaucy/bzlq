@@ -1,0 +1,4 @@
+/target
+/src/bazel/**/*
+!/src/bazel/.gitkeep
+

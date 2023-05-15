@@ -1,0 +1,17 @@
+[package]
+name = "bzlq"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.71"
+clap = { version = "4.2.7", features = ["derive"] }
+directories = "5.0.1"
+protobuf = "3.2.0"
+regex = "1.8.1"
+
+[build-dependencies]
+protobuf-codegen = "3.2.0"
+protoc-bin-vendored = "3.0.0"
