@@ -105,8 +105,29 @@ fn update_cquery(
 	if let Some(parent) = cquery_bin_path.parent() {
 		std::fs::create_dir_all(parent)?;
 	}
-	std::fs::write(cquery_bin_path, &cquery_bin)?;
+	std::fs::write(&cquery_bin_path, &cquery_bin)?;
+	println!("updated {}", &cquery_bin_path.to_string_lossy());
 	return Ok(cquery_bin);
+}
+
+fn update_query(
+	workspace_name: &str,
+	dirs: &directories::ProjectDirs,
+) -> Result<Vec<u8>> {
+	let cache_dir = dirs.cache_dir().join(workspace_name);
+	let query_bin_path = cache_dir.join("query.bin");
+	let query_bin = std::process::Command::new("bazel")
+		.arg("query")
+		.arg("//...")
+		.arg("--output=proto")
+		.output()?
+		.stdout;
+	if let Some(parent) = query_bin_path.parent() {
+		std::fs::create_dir_all(parent)?;
+	}
+	std::fs::write(&query_bin_path, &query_bin)?;
+	println!("updated {}", &query_bin_path.to_string_lossy());
+	return Ok(query_bin);
 }
 
 fn list_targets(
@@ -187,6 +208,7 @@ fn main() -> Result<()> {
 	match &cli.command {
 		Commands::Update {} => {
 			update_cquery(&workspace_name, &proj_dirs)?;
+			update_query(&workspace_name, &proj_dirs)?;
 		}
 		Commands::Targets {
 			run_only,
