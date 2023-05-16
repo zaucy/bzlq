@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package bzlq;
+
+message TargetDetail {
+  string label = 1;
+  string description = 2;
+  bool is_executable = 3;
+  bool is_test = 4;
+}
+
+message TargetDetails { repeated TargetDetail target_detail = 1; }

@@ -1,4 +1,5 @@
 /target
 /src/bazel/**/*
 !/src/bazel/.gitkeep
-
+/src/protos/**/*
+!/src/protos/.gitkeep

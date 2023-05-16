@@ -1,8 +1,10 @@
 mod bazel;
+mod protos;
 
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 use anyhow::{anyhow, Result};
+use bazel::build::QueryResult;
 use clap::{Parser, Subcommand};
 use protobuf::Message;
 
@@ -16,10 +18,17 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
 	/// Update query data
-	Update {},
+	Update {
+		/// Update queries only if they are missing
+		#[arg(short, long)]
+		missing_only: bool,
+	},
 
 	/// List bazel targets
 	Targets {
+		#[arg()]
+		search: String,
+
 		/// Only show executable targets
 		#[arg(short, long)]
 		run_only: bool,
@@ -83,90 +92,190 @@ fn get_workspace_name(path: PathBuf) -> Result<String> {
 	}
 }
 
-struct TargetDetails {
-	label: String,
-	description: String,
-	is_executable: bool,
-	is_test: bool,
-}
-
-fn update_cquery(
+fn query_bin_path(
 	workspace_name: &str,
 	dirs: &directories::ProjectDirs,
-) -> Result<Vec<u8>> {
+	filename: &str,
+) -> PathBuf {
 	let cache_dir = dirs.cache_dir().join(workspace_name);
-	let cquery_bin_path = cache_dir.join("cquery.bin");
-	let cquery_bin = std::process::Command::new("bazel")
-		.arg("cquery")
-		.arg("//...")
-		.arg("--output=proto")
-		.output()?
-		.stdout;
-	if let Some(parent) = cquery_bin_path.parent() {
-		std::fs::create_dir_all(parent)?;
-	}
-	std::fs::write(&cquery_bin_path, &cquery_bin)?;
-	println!("updated {}", &cquery_bin_path.to_string_lossy());
-	return Ok(cquery_bin);
+	let query_bin_path = cache_dir.join(format!("{}.bin", filename));
+	return query_bin_path;
+}
+
+fn query_bin_exists(
+	workspace_name: &str,
+	dirs: &directories::ProjectDirs,
+	filename: &str,
+) -> bool {
+	return query_bin_path(workspace_name, dirs, filename).exists();
 }
 
 fn update_query(
 	workspace_name: &str,
 	dirs: &directories::ProjectDirs,
+	filename: &str,
+	query: &str,
 ) -> Result<Vec<u8>> {
-	let cache_dir = dirs.cache_dir().join(workspace_name);
-	let query_bin_path = cache_dir.join("query.bin");
+	let path = query_bin_path(workspace_name, dirs, filename);
 	let query_bin = std::process::Command::new("bazel")
 		.arg("query")
-		.arg("//...")
+		.arg(query)
 		.arg("--output=proto")
 		.output()?
 		.stdout;
-	if let Some(parent) = query_bin_path.parent() {
+	if let Some(parent) = path.parent() {
 		std::fs::create_dir_all(parent)?;
 	}
-	std::fs::write(&query_bin_path, &query_bin)?;
-	println!("updated {}", &query_bin_path.to_string_lossy());
+	std::fs::write(&path, &query_bin)?;
+	eprintln!("updated {}", &path.to_string_lossy());
 	return Ok(query_bin);
+}
+
+fn update_external(
+	workspace_name: &str,
+	dirs: &directories::ProjectDirs,
+) -> Result<Vec<u8>> {
+	return update_query(workspace_name, dirs, "external", "//external:*");
+}
+
+fn create_target_details(
+	rule: &bazel::build::Rule,
+) -> protos::bzlq::TargetDetail {
+	let mut target_details = protos::bzlq::TargetDetail::new();
+	target_details.label = rule.name().to_string();
+	target_details.description = rule.rule_class().to_string();
+	target_details.is_executable = is_executable_rule(&rule);
+	target_details.is_test = is_test_rule(&rule);
+	return target_details;
 }
 
 fn list_targets(
 	workspace_name: &str,
 	dirs: &directories::ProjectDirs,
-) -> Result<Vec<TargetDetails>> {
+	query: &str,
+) -> Result<Vec<protos::bzlq::TargetDetail>> {
 	let cache_dir = dirs.cache_dir().join(workspace_name);
-	let cquery_bin_path = cache_dir.join("cquery.bin");
+	let query_bin_path = cache_dir.join("query.bin");
+	let query_bin: Vec<u8>;
 
-	let cquery_bin: Vec<u8>;
-
-	if !cquery_bin_path.exists() {
-		cquery_bin = update_cquery(workspace_name, dirs)?;
+	if !query_bin_path.exists() {
+		query_bin = update_query(workspace_name, dirs, "query", query)?;
 	} else {
-		cquery_bin = std::fs::read(cquery_bin_path)?;
+		query_bin = std::fs::read(query_bin_path)?;
 	}
 
-	let msg = bazel::analysis_v2::CqueryResult::parse_from_bytes(&cquery_bin)?;
+	let query_result = QueryResult::parse_from_bytes(&query_bin)?;
 
-	let mut target_details: Vec<TargetDetails> =
-		Vec::with_capacity(msg.results.len());
+	let mut target_details: Vec<protos::bzlq::TargetDetail> =
+		Vec::with_capacity(query_result.target.len());
 
-	for entry in msg.results.iter() {
-		let target = entry.target.clone().unwrap();
+	for target in query_result.target {
 		target_details.push(match target.type_() {
 			bazel::build::target::Discriminator::RULE => {
 				let rule = target.rule.unwrap();
-				TargetDetails {
-					label: rule.name().to_string(),
-					description: rule.rule_class().to_string(),
-					is_executable: is_executable_rule(&rule),
-					is_test: is_test_rule(&rule),
-				}
+				create_target_details(&rule)
 			}
 			bazel::build::target::Discriminator::SOURCE_FILE => todo!(),
 			bazel::build::target::Discriminator::GENERATED_FILE => todo!(),
 			bazel::build::target::Discriminator::PACKAGE_GROUP => todo!(),
 			bazel::build::target::Discriminator::ENVIRONMENT_GROUP => todo!(),
 		});
+	}
+
+	return Ok(target_details);
+}
+
+fn create_target_details_message(
+	workspace_name: &str,
+	dirs: &directories::ProjectDirs,
+) -> Result<protos::bzlq::TargetDetails> {
+	let mut all_targets = list_targets(workspace_name, dirs, "//...")?;
+	all_targets.append(&mut list_external_targets(workspace_name, dirs)?);
+	let all_targets = all_targets;
+
+	let mut target_details = protos::bzlq::TargetDetails::new();
+	target_details.target_detail.reserve(all_targets.len());
+
+	for target in all_targets {
+		target_details.target_detail.push(target);
+	}
+
+	return Ok(target_details);
+}
+
+fn update_target_details(
+	workspace_name: &str,
+	dirs: &directories::ProjectDirs,
+) -> Result<protos::bzlq::TargetDetails> {
+	let msg = create_target_details_message(workspace_name, dirs)?;
+	let path = query_bin_path(workspace_name, dirs, "targets");
+	let mut file = std::fs::File::create(&path)?;
+
+	msg.write_to_writer(&mut file)?;
+	eprintln!("updated {}", path.to_string_lossy());
+
+	return Ok(msg);
+}
+
+fn get_target_details(
+	workspace_name: &str,
+	dirs: &directories::ProjectDirs,
+) -> Result<protos::bzlq::TargetDetails> {
+	let path = query_bin_path(workspace_name, dirs, "targets");
+	let mut file = std::fs::File::open(path)?;
+	let msg = protos::bzlq::TargetDetails::parse_from_reader(&mut file)?;
+	return Ok(msg);
+}
+
+fn list_external_targets(
+	workspace_name: &str,
+	dirs: &directories::ProjectDirs,
+) -> Result<Vec<protos::bzlq::TargetDetail>> {
+	let cache_dir = dirs.cache_dir().join(workspace_name);
+
+	let mut target_details: Vec<protos::bzlq::TargetDetail> = Vec::new();
+
+	let external_bin_path = cache_dir.join("external.bin");
+	let external_bin: Vec<u8>;
+	if !external_bin_path.exists() {
+		external_bin = update_external(workspace_name, dirs)?;
+	} else {
+		external_bin = std::fs::read(external_bin_path)?;
+	}
+
+	let external_query_result = QueryResult::parse_from_bytes(&external_bin)?;
+
+	for target in external_query_result.target {
+		match target.type_() {
+			bazel::build::target::Discriminator::RULE => {
+				let rule = target.rule.unwrap();
+				let target_name = rule.name();
+				let external_prefix = "//external:";
+				if !target_name.starts_with(&external_prefix) {
+					continue;
+				}
+				if target_name.ends_with("WORKSPACE.bazel") {
+					continue;
+				}
+
+				let dep_name = &target_name[external_prefix.len()..];
+
+				if dep_name.contains("/") {
+					continue;
+				}
+
+				let dep_name = &target_name[external_prefix.len()..];
+				if let Ok(ref mut ext_targets) =
+					list_targets(dep_name, dirs, &format!("@{}//...", dep_name))
+				{
+					target_details.append(ext_targets);
+				}
+			}
+			bazel::build::target::Discriminator::SOURCE_FILE => {}
+			bazel::build::target::Discriminator::GENERATED_FILE => {}
+			bazel::build::target::Discriminator::PACKAGE_GROUP => {}
+			bazel::build::target::Discriminator::ENVIRONMENT_GROUP => {}
+		}
 	}
 
 	return Ok(target_details);
@@ -206,15 +315,32 @@ fn main() -> Result<()> {
 		.expect("Failed to load project directories");
 
 	match &cli.command {
-		Commands::Update {} => {
-			update_cquery(&workspace_name, &proj_dirs)?;
-			update_query(&workspace_name, &proj_dirs)?;
+		Commands::Update { missing_only } => {
+			if !missing_only
+				|| query_bin_exists(&workspace_name, &proj_dirs, "query")
+			{
+				update_query(&workspace_name, &proj_dirs, "query", "//...")?;
+				update_external(&workspace_name, &proj_dirs)?;
+			}
+
+			update_target_details(&workspace_name, &proj_dirs)?;
 		}
 		Commands::Targets {
 			run_only,
 			test_only,
+			search,
 		} => {
-			for target in list_targets(&workspace_name, &proj_dirs)?.iter() {
+			let mut stdout = std::io::stdout();
+			let target_details: protos::bzlq::TargetDetails;
+			if !query_bin_exists(&workspace_name, &proj_dirs, "targets") {
+				target_details =
+					update_target_details(&workspace_name, &proj_dirs)?;
+			} else {
+				target_details =
+					get_target_details(&workspace_name, &proj_dirs)?;
+			}
+
+			for target in target_details.target_detail {
 				if *run_only && !target.is_executable {
 					continue;
 				}
@@ -223,10 +349,15 @@ fn main() -> Result<()> {
 					continue;
 				}
 
-				println!(
-					r#"{{"label":"{}","description":"{}"}}"#,
-					target.label, target.description,
-				);
+				if !search.is_empty() && !target.label.starts_with(search) {
+					continue;
+				}
+
+				stdout.write_all("{\"label\":\"".as_bytes())?;
+				stdout.write_all(target.label.as_bytes())?;
+				stdout.write_all("\",\"description\":\"".as_bytes())?;
+				stdout.write_all(target.description.as_bytes())?;
+				stdout.write_all("\"}\n".as_bytes())?;
 			}
 		}
 		Commands::Bes {} => {}
