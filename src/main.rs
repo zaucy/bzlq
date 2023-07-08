@@ -18,11 +18,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
 	/// Update query data
-	Update {
-		/// Update queries only if they are missing
-		#[arg(short, long)]
-		missing_only: bool,
-	},
+	Update {},
 
 	/// List bazel targets
 	Targets {
@@ -315,14 +311,9 @@ fn main() -> Result<()> {
 		.expect("Failed to load project directories");
 
 	match &cli.command {
-		Commands::Update { missing_only } => {
-			if !missing_only
-				|| query_bin_exists(&workspace_name, &proj_dirs, "query")
-			{
-				update_query(&workspace_name, &proj_dirs, "query", "//...")?;
-				update_external(&workspace_name, &proj_dirs)?;
-			}
-
+		Commands::Update {} => {
+			update_query(&workspace_name, &proj_dirs, "query", "//...")?;
+			update_external(&workspace_name, &proj_dirs)?;
 			update_target_details(&workspace_name, &proj_dirs)?;
 		}
 		Commands::Targets {
