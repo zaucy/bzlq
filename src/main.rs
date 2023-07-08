@@ -23,7 +23,7 @@ enum Commands {
 	/// List bazel targets
 	Targets {
 		#[arg()]
-		search: String,
+		search: Option<String>,
 
 		/// Only show executable targets
 		#[arg(short, long)]
@@ -340,8 +340,10 @@ fn main() -> Result<()> {
 					continue;
 				}
 
-				if !search.is_empty() && !target.label.starts_with(search) {
-					continue;
+				if let Some(search) = search {
+					if !search.is_empty() && !target.label.starts_with(search) {
+						continue;
+					}
 				}
 
 				stdout.write_all("{\"label\":\"".as_bytes())?;
