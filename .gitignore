@@ -1,5 +1,5 @@
 /target
-/bzlq-cli/src/bazel/**/*
-!/bzlq-cli/src/bazel/.gitkeep
-/bzlq-cli/src/protos/**/*
-!/bzlq-cli/src/protos/.gitkeep
+/bzlq/src/bazel/**/*
+!/bzlq/src/bazel/.gitkeep
+/bzlq/src/protos/**/*
+!/bzlq/src/protos/.gitkeep

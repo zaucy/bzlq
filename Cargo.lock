@@ -79,12 +79,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "bzlq"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "protobuf",
+ "protobuf-codegen",
+ "protoc-bin-vendored",
+ "regex",
+]
+
+[[package]]
 name = "bzlq-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bzlq",
  "clap",
- "directories",
  "protobuf",
  "protobuf-codegen",
  "protoc-bin-vendored",
@@ -152,10 +164,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
-name = "directories"
+name = "dirs"
 version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a49173b84e034382284f27f1af4dcbbd231ffa358c0fe316541a7337f376a35"
+checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
 dependencies = [
  "dirs-sys",
 ]

@@ -1,18 +1,13 @@
 [package]
-name = "bzlq-cli"
+name = "bzlq"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "bzlq"
-path = "src/main.rs"
-
 [dependencies]
+dirs = "5.0.1"
 anyhow = "1.0.71"
-clap = { version = "4.2.7", features = ["derive"] }
 protobuf = "3.2.0"
 regex = "1.8.1"
-bzlq = { path = "../bzlq" }
 
 [build-dependencies]
 protobuf-codegen = "3.2.0"
