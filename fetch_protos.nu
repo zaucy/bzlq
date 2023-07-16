@@ -1,8 +1,8 @@
 let googleapis_ref = "ef2e2ea532248d6dc40a56bc6c95cea858ba31b6";
 
 let bazel_protos = [
-	"src/main/protobuf/build.proto",
-	"src/main/protobuf/analysis_v2.proto",
+	"bzlq/src/main/protobuf/build.proto",
+	"bzlq/src/main/protobuf/analysis_v2.proto",
 ];
 
 [
@@ -16,7 +16,7 @@ let bazel_protos = [
 	"google/devtools/build/v1/build_status.proto",
 ] | each {|f|
 	let url = $"https://github.com/googleapis/googleapis/raw/($googleapis_ref)/($f)";
-	let local_path = $"googleapis/($f)";
+	let local_path = $"bzlq/googleapis/($f)";
 
 	mkdir ($local_path | path parse | get parent);
 	http get $url | save $local_path -f;
