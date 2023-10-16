@@ -13,6 +13,9 @@ clap = { version = "4.2.7", features = ["derive"] }
 protobuf = "3.2.0"
 regex = "1.8.1"
 bzlq = { path = "../bzlq" }
+lsp-server = "0.7.2"
+lsp-types = "0.94.0"
+serde_json = "1.0.103"
 
 [build-dependencies]
 protobuf-codegen = "3.2.0"
