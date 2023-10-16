@@ -1,3 +1,5 @@
+mod handler;
+
 use anyhow::Result;
 use bzlq::{
 	// format 1 by 1
@@ -12,7 +14,13 @@ use bzlq::{
 	UpdateQueryOptions,
 };
 use clap::{Parser, Subcommand};
-use std::io::Write;
+use lsp_server::Connection;
+use lsp_types::{
+	request::{Formatting, Request},
+	ClientCapabilities, DocumentFormattingParams, InitializeParams,
+	ServerCapabilities,
+};
+use std::{io::Write, path::Path};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -40,12 +48,64 @@ enum Commands {
 		test_only: bool,
 	},
 
-	/// Start build event service
-	Bes {},
+	LanguageServer {
+		#[arg()]
+		stdio: bool,
+	},
 }
 
 fn query_bin_exists(workspace_name: &str, filename: &str) -> bool {
 	get_query_bin_file_path(workspace_name, filename).exists()
+}
+
+fn run_buildifier(
+	params: lsp_types::DocumentFormattingParams,
+) -> Result<Option<Vec<lsp_types::TextEdit>>> {
+}
+
+fn language_server() -> Result<()> {
+	let (connection, io_threads) = Connection::stdio();
+
+	let (id, params) = connection.initialize_start()?;
+
+	let init_params: InitializeParams = serde_json::from_value(params).unwrap();
+	let client_capabilities: ClientCapabilities = init_params.capabilities;
+	let server_capabilities = ServerCapabilities::default();
+
+	let initialize_data = serde_json::json!({
+		"capabilities": server_capabilities,
+		"serverInfo": {
+			"name": env!("CARGO_PKG_NAME"),
+			"version": env!("CARGO_PKG_VERSION"),
+		}
+	});
+
+	connection.initialize_finish(id, initialize_data)?;
+
+	for msg in &connection.receiver {
+		match msg {
+			lsp_server::Message::Request(req) => {
+				if connection.handle_shutdown(&req)? {
+					return Ok(());
+				}
+
+				let res = lsp_server::Response {
+					id,
+					result: None,
+					error: None,
+				};
+				let res: lsp_server::Response =
+					match handler::request::handle_request(req) {
+						Ok(result) => {}
+						_ => (),
+					};
+			}
+			lsp_server::Message::Response(_) => todo!(),
+			lsp_server::Message::Notification(_) => todo!(),
+		}
+	}
+
+	Ok(())
 }
 
 fn main() -> Result<()> {
@@ -117,7 +177,9 @@ fn main() -> Result<()> {
 				stdout.write_all("\"}\n".as_bytes())?;
 			}
 		}
-		Commands::Bes {} => {}
+		Commands::LanguageServer { stdio } => {
+			language_server()?;
+		}
 	}
 
 	return Ok(());
